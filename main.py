@@ -24,6 +24,14 @@ app.add_middleware(
 async def health():
     return {"status": "ok", "service": "VoiceOrder", "restaurant": "Swadeshi Frisco"}
 
+@app.post("/debug")
+async def debug_webhook(request: Request):
+    data = await request.json()
+    print("=== VAPI PAYLOAD ===")
+    print(json.dumps(data, indent=2))
+    print("=== END PAYLOAD ===")
+    return {"status": "ok"}
+
 
 @app.post("/orders")
 async def create_order(request: Request):
