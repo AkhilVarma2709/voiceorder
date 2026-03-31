@@ -28,10 +28,26 @@ async def health():
 @app.post("/debug")
 async def debug_webhook(request: Request):
     data = await request.json()
-    print("=== VAPI PAYLOAD ===")
-    print(json.dumps(data, indent=2))
-    print("=== END PAYLOAD ===")
-    return {"status": "ok"}
+    msg = data.get("message", data)
+    msg_type = msg.get("type", "unknown")
+    analysis = msg.get("analysis", {})
+    structured = analysis.get("structuredData", {})
+    call_data = msg.get("call", {})
+    call_id = call_data.get("id", "")
+
+    logger.info(f"=== VAPI WEBHOOK === type={msg_type} call_id={call_id}")
+    logger.info(f"  analysis keys: {list(analysis.keys())}")
+    logger.info(f"  structuredData: {json.dumps(structured, indent=2)}")
+
+    # Log transcript summary (just messages, not word-level data)
+    messages = msg.get("artifact", {}).get("messages", [])
+    for m in messages:
+        role = m.get("role", "?")
+        text = m.get("message", m.get("content", ""))[:120]
+        if role != "system":
+            logger.info(f"  [{role}] {text}")
+
+    return {"status": "ok", "type": msg_type, "structured_data": structured}
 
 
 @app.post("/orders")
