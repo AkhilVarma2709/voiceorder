@@ -21,6 +21,32 @@ app.add_middleware(
 )
 
 
+def extract_structured_data(message: dict) -> dict:
+    """Extract structured data from VAPI webhook, handling multiple formats."""
+    # 1. Try legacy: analysis.structuredData with flat fields
+    analysis = message.get("analysis", {})
+    sd = analysis.get("structuredData", {})
+    if sd and "order_items" in sd:
+        return sd
+
+    # 2. Try new Structured Outputs: analysis.structuredData has UUID-keyed entries
+    #    Format: { "uuid": { "name": "order_details", "result": { ... } } }
+    for key, value in sd.items():
+        if isinstance(value, dict) and "result" in value:
+            return value["result"]
+
+    # 3. Try top-level structuredOutputs on the message
+    outputs = message.get("structuredOutputs", {})
+    for key, value in outputs.items():
+        if isinstance(value, dict) and "result" in value:
+            return value["result"]
+        if isinstance(value, dict) and "order_items" in value:
+            return value
+
+    # 4. Return whatever we have (might be empty)
+    return sd
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "VoiceOrder", "restaurant": "Swadeshi Frisco"}
@@ -36,12 +62,15 @@ async def debug_webhook(request: Request):
     if msg_type != "end-of-call-report":
         return {"status": "ok", "type": msg_type}
 
-    analysis = msg.get("analysis", {})
-    structured = analysis.get("structuredData", {})
-
+    # Log top-level keys for debugging format discovery
     logger.info(f"=== END OF CALL === call_id={call_id}")
-    logger.info(f"  analysis keys: {list(analysis.keys())}")
-    logger.info(f"  structuredData: {json.dumps(structured, indent=2)}")
+    logger.info(f"  message keys: {list(msg.keys())}")
+    logger.info(f"  analysis raw: {json.dumps(msg.get('analysis', {}), indent=2)[:500]}")
+    if "structuredOutputs" in msg:
+        logger.info(f"  structuredOutputs: {json.dumps(msg['structuredOutputs'], indent=2)[:500]}")
+
+    structured = extract_structured_data(msg)
+    logger.info(f"  EXTRACTED structuredData: {json.dumps(structured, indent=2)}")
 
     # Log transcript summary (just messages, not word-level data)
     messages = msg.get("artifact", {}).get("messages", [])
@@ -64,9 +93,9 @@ async def create_order(request: Request):
         if message.get("type") != "end-of-call-report":
             return {"status": "ignored", "reason": "not end-of-call-report"}
 
-        # Extract structured data from analysis
-        analysis = message.get("analysis", {})
-        structured = analysis.get("structuredData", {})
+        # Extract structured data (handles both legacy and new VAPI formats)
+        structured = extract_structured_data(message)
+        logger.info(f"Order structured data: {json.dumps(structured, indent=2)}")
 
         order_items = structured.get("order_items", "") or ""
         if not order_items.strip():
