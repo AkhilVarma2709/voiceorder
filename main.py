@@ -30,12 +30,16 @@ async def debug_webhook(request: Request):
     data = await request.json()
     msg = data.get("message", data)
     msg_type = msg.get("type", "unknown")
+    call_id = msg.get("call", {}).get("id", "")
+
+    # Only fully log end-of-call-report; ignore mid-call noise
+    if msg_type != "end-of-call-report":
+        return {"status": "ok", "type": msg_type}
+
     analysis = msg.get("analysis", {})
     structured = analysis.get("structuredData", {})
-    call_data = msg.get("call", {})
-    call_id = call_data.get("id", "")
 
-    logger.info(f"=== VAPI WEBHOOK === type={msg_type} call_id={call_id}")
+    logger.info(f"=== END OF CALL === call_id={call_id}")
     logger.info(f"  analysis keys: {list(analysis.keys())}")
     logger.info(f"  structuredData: {json.dumps(structured, indent=2)}")
 
